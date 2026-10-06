@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WBL Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#eef6ff;color:#10243a}.wrap{max-width:1100px;margin:auto;padding:28px 18px}.card{background:white;border-radius:18px;padding:22px;margin:16px 0;box-shadow:0 8px 28px #07579c18}h1{color:#07579c}h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.field{display:flex;flex-direction:column;gap:6px}input,select,button{padding:11px;border:1px solid #c8d8e8;border-radius:10px;font-size:15px}button{background:#07579c;color:white;border:0;font-weight:700;cursor:pointer}.danger{background:#444}.wide{grid-column:1/-1}.hidden{display:none}.msg{padding:10px;border-radius:10px;background:#e9f5ff;margin-top:10px}@media(max-width:700px){.grid{grid-template-columns:1fr}}
+</style></head>
+<body><div class="wrap">
+<h1>⚾ WBL 관리자 시스템</h1>
+<div id="login" class="card"><h2>관리자 로그인</h2><div class="grid"><div class="field"><label>이메일</label><input id="email" type="email"></div><div class="field"><label>비밀번호</label><input id="password" type="password"></div></div><br><button onclick="login()">로그인</button><div id="loginMsg"></div></div>
+<div id="app" class="hidden">
+<div class="card"><b id="who"></b> <button class="danger" style="float:right" onclick="logout()">로그아웃</button><div style="clear:both"></div></div>
+<div class="grid">
+<section class="card"><h2>팀 추가</h2><div class="field"><label>팀 이름</label><input id="teamName"></div><div class="field"><label>로고 URL (선택)</label><input id="teamLogo"></div><br><button onclick="addTeam()">팀 추가</button><div id="teamMsg"></div></section>
+<section class="card"><h2>선수 추가</h2><div class="field"><label>선수 이름</label><input id="playerName"></div><div class="field"><label>포지션</label><input id="position" placeholder="예: SS, CF, P"></div><div class="field"><label>팀</label><select id="teamSelect"></select></div><br><button onclick="addPlayer()">선수 추가</button><div id="playerMsg"></div></section>
+<section class="card wide"><h2>타격 기록 입력</h2><p>한 경기에서 나온 기록만 입력하면 시즌 누적 기록에 자동 합산됩니다.</p><div class="grid" id="batForm"></div><br><button onclick="recordBatting()">타격 기록 저장</button><div id="batMsg"></div></section>
+<section class="card wide"><h2>투구 기록 입력</h2><div class="grid" id="pitForm"></div><br><button onclick="recordPitching()">투구 기록 저장</button><div id="pitMsg"></div></section>
+</div></div></div>
+<script>
+const SUPABASE_URL='https://gqfkphyslcuijqqanvev.supabase.co',SUPABASE_KEY='sb_publishable_vTn1dcPB1Jo8qWgSKvD9NQ_TrTlufmD';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+const bat=[['player_id','선수','select'],['g','G'],['pa','PA'],['ab','AB'],['r','R'],['h','H'],['doubles','2B'],['triples','3B'],['hr','HR'],['rbi','RBI'],['bb','BB'],['so','SO'],['sb','SB'],['cs','CS']];
+const pit=[['player_id','선수','select'],['g','G'],['gs','GS'],['w','W'],['l','L'],['sv','SV'],['ip','IP'],['h','H'],['er','ER'],['bb','BB'],['so','SO']];
+function buildForm(id,fields){$(id).innerHTML=fields.map(([k,l,t])=>t?'<div class="field"><label>'+l+'</label><select id="'+id+k+'"></select></div>':'<div class="field"><label>'+l+'</label><input id="'+id+k+'" type="number" min="0" step="'+(k==='ip'?'0.1':'1')+'" value="0"></div>').join('')}
+buildForm('batForm',bat);buildForm('pitForm',pit);
+async function login(){const {error}=await sb.auth.signInWithPassword({email:$('email').value,password:$('password').value});if(error){$('loginMsg').textContent=error.message;return}await init()}
+async function logout(){await sb.auth.signOut();location.reload()}
+async function init(){const {data:{user}}=await sb.auth.getUser();if(!user)return;$('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent='로그인: '+user.email;const {data:ok}=await sb.rpc('is_admin');if(!ok){$('app').innerHTML='<div class="card"><h2>접근 거부</h2><p>관리자 권한이 없습니다.</p></div>';return}await loadTeams();await loadPlayers()}
+async function loadTeams(){const {data,error}=await sb.from('teams').select('id,name').order('name');if(error)return;$('teamSelect').innerHTML='<option value="">팀 선택</option>'+data.map(x=>'<option value="'+x.id+'">'+x.name+'</option>').join('')}
+async function loadPlayers(){const {data,error}=await sb.from('players').select('id,name').eq('active',true).order('name');if(error)return;for(const id of ['batFormplayer_id','pitFormplayer_id'])$(id).innerHTML='<option value="">선수 선택</option>'+data.map(x=>'<option value="'+x.id+'">'+x.name+'</option>').join('')}
+async function addTeam(){const {error}=await sb.rpc('admin_upsert_team',{p_name:$('teamName').value,p_logo_url:$('teamLogo').value});$('teamMsg').textContent=error?error.message:'팀이 추가되었습니다.';if(!error){$('teamName').value='';$('teamLogo').value='';await loadTeams()}}
+async function addPlayer(){const {error}=await sb.rpc('admin_upsert_player',{p_name:$('playerName').value,p_position:$('position').value,p_team_id:$('teamSelect').value||null});$('playerMsg').textContent=error?error.message:'선수가 추가되었습니다.';if(!error){$('playerName').value='';$('position').value='';await loadPlayers()}}
+function vals(fields,prefix){let o={};for(const [k] of fields)o['p_'+k]=$(prefix+k).value;return o}
+async function recordBatting(){let o=vals(bat,'batForm');if(!o.p_player_id){$('batMsg').textContent='선수를 선택하세요.';return}for(const k of Object.keys(o))if(k!=='p_player_id')o[k]=Number(o[k]);const {error}=await sb.rpc('admin_record_batting',o);$('batMsg').textContent=error?error.message:'타격 기록이 누적되었습니다.'}
+async function recordPitching(){let o=vals(pit,'pitForm');if(!o.p_player_id){$('pitMsg').textContent='선수를 선택하세요.';return}for(const k of Object.keys(o))if(k!=='p_player_id')o[k]=Number(o[k]);const {error}=await sb.rpc('admin_record_pitching',o);$('pitMsg').textContent=error?error.message:'투구 기록이 누적되었습니다.'}
+sb.auth.getSession().then(init);
+</script></body></html>
