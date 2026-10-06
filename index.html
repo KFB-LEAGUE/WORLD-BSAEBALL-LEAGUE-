@@ -33,15 +33,52 @@ footer{background:#06345d;color:#ccecff;text-align:center;padding:28px 20px;marg
 <p>THE WORLD'S GAME. ONE LEAGUE.</p>
 </section>
 <main class="wrap">
-<section class="section" id="schedule"><h2 class="section-title">Upcoming Games</h2><div class="games">
-<div class="game"><strong>Opening Series</strong><span class="muted">TBA @ TBA · Date TBA</span></div>
-<div class="game"><strong>Round 1</strong><span class="muted">TBA @ TBA · Date TBA</span></div>
-</div></section>
-<section class="section" id="teams"><h2 class="section-title">Teams</h2><div class="grid">
-<div class="card"><h3>Team 01</h3><p class="muted">Roster coming soon</p></div><div class="card"><h3>Team 02</h3><p class="muted">Roster coming soon</p></div><div class="card"><h3>Team 03</h3><p class="muted">Roster coming soon</p></div>
-</div></section>
-<section class="section" id="standings"><h2 class="section-title">Standings</h2><div class="card"><p class="muted">League standings and game results will appear here.</p></div></section>
+<section class="section" id="schedule"><h2 class="section-title">Schedule & Results</h2><div id="games" class="games"><div class="card"><p class="muted">Loading league data...</p></div></div></section>
+<section class="section" id="teams"><h2 class="section-title">Teams</h2><div id="teams-grid" class="grid"><div class="card"><p class="muted">Loading teams...</p></div></div></section>
+<section class="section" id="standings"><h2 class="section-title">Standings</h2><div class="card" style="overflow:auto"><table id="standings-table" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:10px">Team</th><th>G</th><th>W</th><th>L</th><th>PCT</th><th>RS</th><th>RA</th></tr></thead><tbody><tr><td colspan="7" class="muted" style="padding:18px;text-align:center">Loading standings...</td></tr></tbody></table></div></section>
 <section class="cta"><h2>WORLD BASEBALL LEAGUE</h2><p>리그의 팀과 경기 정보를 이곳에서 관리합니다.</p></section>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL="https://gqfkphyslcuijqqanvev.supabase.co";
+const SUPABASE_KEY="sb_publishable_vTn1dcPB1Jo8qWgSKvD9NQ_TrTlufmD";
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+const fmtDate=d=>d?new Date(d+"T00:00:00").toLocaleDateString("ko-KR",{year:"numeric",month:"short",day:"numeric"}):"TBA";
+
+async function loadWBL(){
+  const [{data:teams,error:te},{data:games,error:ge}]=await Promise.all([
+    db.from("teams").select("id,name,logo_url").order("name"),
+    db.from("games").select("id,game_date,home_team_id,away_team_id,home_score,away_score,status,home:home_team_id(id,name,logo_url),away:away_team_id(id,name,logo_url)").order("game_date",{ascending:false})
+  ]);
+  if(te) throw te; if(ge) throw ge;
+
+  document.getElementById("teams-grid").innerHTML=teams.length?teams.map(t=>`<div class="card"><h3>${esc(t.name)}</h3><p class="muted">WBL Team</p></div>`).join(""):'<div class="card"><p class="muted">등록된 팀이 없습니다.</p></div>';
+
+  const sorted=[...(games||[])].sort((a,b)=>new Date(a.game_date)-new Date(b.game_date));
+  const upcoming=sorted.filter(g=>g.status==="scheduled").slice(0,6);
+  const finals=sorted.filter(g=>g.status==="final").sort((a,b)=>new Date(b.game_date)-new Date(a.game_date)).slice(0,6);
+  const list=[...upcoming,...finals];
+  document.getElementById("games").innerHTML=list.length?list.map(g=>{
+    const h=g.home?.name||"TBA", a=g.away?.name||"TBA";
+    const score=g.status==="final"?`<b>${g.away_score} : ${g.home_score}</b>`:"VS";
+    const label=g.status==="final"?"FINAL":"UPCOMING";
+    return `<div class="game"><strong>${esc(a)} @ ${esc(h)}</strong><span class="muted">${fmtDate(g.game_date)} · ${label} · ${score}</span></div>`;
+  }).join(""):'<div class="card"><p class="muted">등록된 경기 일정이 없습니다.</p></div>';
+
+  const stats={};
+  (teams||[]).forEach(t=>stats[t.id]={name:t.name,g:0,w:0,l:0,rs:0,ra:0});
+  (games||[]).filter(g=>g.status==="final").forEach(g=>{
+    if(!stats[g.home_team_id]||!stats[g.away_team_id]) return;
+    const h=stats[g.home_team_id],a=stats[g.away_team_id];
+    h.g++;a.g++;h.rs+=Number(g.home_score||0);h.ra+=Number(g.away_score||0);a.rs+=Number(g.away_score||0);a.ra+=Number(g.home_score||0);
+    if(g.home_score>g.away_score){h.w++;a.l++;}else if(g.away_score>g.home_score){a.w++;h.l++;}
+  });
+  const rows=Object.values(stats).sort((a,b)=>(b.w-b.l)-(a.w-a.l)||((b.w/(b.g||1))-(a.w/(a.g||1)))||b.rs-b.ra);
+  document.querySelector("#standings-table tbody").innerHTML=rows.length?rows.map(s=>`<tr><td style="padding:10px;font-weight:700">${esc(s.name)}</td><td style="text-align:center">${s.g}</td><td style="text-align:center">${s.w}</td><td style="text-align:center">${s.l}</td><td style="text-align:center">${s.g?(s.w/s.g).toFixed(3):".000"}</td><td style="text-align:center">${s.rs}</td><td style="text-align:center">${s.ra}</td></tr>`).join(""):'<tr><td colspan="7" class="muted" style="padding:18px;text-align:center">등록된 팀이 없습니다.</td></tr>';
+}
+loadWBL().catch(err=>{console.error(err);document.getElementById("games").innerHTML='<div class="card"><p class="muted">리그 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.</p></div>';});
+</script>
 </main>
 <footer>© 2026 World Baseball League</footer>
 </body>
