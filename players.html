@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WBL Player Stats</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--blue:#55b5f2;--deep:#07579c;--navy:#06345d;--ink:#10243a}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef8ff;color:var(--ink)}
+header{background:var(--navy);color:#fff;padding:18px 20px;position:sticky;top:0;z-index:5}
+.head{max-width:1100px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:16px}
+a{color:inherit;text-decoration:none}.back{font-weight:800}
+main{max-width:1100px;margin:auto;padding:42px 20px}
+.hero{background:linear-gradient(135deg,var(--deep),var(--blue));color:#fff;border-radius:24px;padding:32px;margin-bottom:24px}
+h1{margin:0 0 8px;font-size:clamp(30px,6vw,52px)}.hero p{margin:0;opacity:.9}
+.search{background:#fff;border:1px solid #d6edfc;border-radius:18px;padding:18px;box-shadow:0 8px 24px #07579c12;display:flex;gap:10px}
+input{width:100%;border:2px solid #d6edfc;border-radius:12px;padding:14px 16px;font-size:16px;outline:none}input:focus{border-color:var(--blue)}
+button{border:0;border-radius:12px;padding:0 22px;background:var(--deep);color:#fff;font-weight:800;font-size:15px;cursor:pointer}
+#status{margin:18px 2px;color:#61758a}.results{display:grid;gap:16px}
+.card{background:#fff;border:1px solid #d6edfc;border-radius:18px;padding:22px;box-shadow:0 8px 24px #07579c12}
+.player-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid #e6f2fa;padding-bottom:14px;margin-bottom:14px}
+.player-name{font-size:24px;font-weight:900;color:var(--navy)}.team{color:#61758a;margin-top:4px}
+.badge{background:#e8f6ff;color:var(--deep);padding:7px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:9px}
+.stat{background:#f5fbff;border-radius:12px;padding:11px}.stat b{display:block;font-size:11px;color:#61758a;margin-bottom:4px}.stat span{font-size:17px;font-weight:900}
+.empty{text-align:center;padding:38px;color:#61758a}
+@media(max-width:600px){.search{display:block}.search button{width:100%;height:48px;margin-top:10px}.player-head{display:block}.badge{display:inline-block;margin-top:10px}}
+</style>
+</head>
+<body>
+<header><div class="head"><strong>WORLD BASEBALL LEAGUE</strong><a class="back" href="./">← 홈</a></div></header>
+<main>
+<section class="hero"><h1>선수 성적 검색</h1><p>WBL 선수 이름으로 타격·투수 성적을 실시간 검색합니다.</p></section>
+<section class="search"><input id="q" type="search" placeholder="선수 이름을 입력하세요" autocomplete="off"><button id="searchBtn">검색</button></section>
+<div id="status">선수 이름을 입력하면 검색 결과가 표시됩니다.</div>
+<section id="results" class="results"></section>
+</main>
+<script>
+const {createClient}=supabase;
+const db=createClient("https://gqfkphyslcuijqqanvev.supabase.co","sb_publishable_vTn1dcPB1Jo8qWgSKvD9NQ_TrTlufmD");
+const q=document.getElementById('q'), btn=document.getElementById('searchBtn'), status=document.getElementById('status'), results=document.getElementById('results');
+
+function n(v){return v ?? 0}
+function fmt(v){return Number(v||0).toFixed(3)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+function battingCard(p){
+return '<article class="card"><div class="player-head"><div><div class="player-name">'+esc(p.name)+'</div><div class="team">'+esc(p.team_name||'소속팀 미정')+(p.position?' · '+esc(p.position):'')+'</div></div><span class="badge">BATTER</span></div><div class="stats">'
++[['G','g'],['PA','pa'],['AB','ab'],['R','r'],['H','h'],['2B','doubles'],['3B','triples'],['HR','hr'],['RBI','rbi'],['BB','bb'],['SO','so'],['SB','sb'],['AVG','avg'],['OBP','obp'],['SLG','slg'],['OPS','ops']].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+(['avg','obp','slg','ops'].includes(x[1])?fmt(p[x[1]]):n(p[x[1]]))+'</span></div>').join('')+'</div></article>'
+}
+function pitchingCard(p){
+return '<article class="card"><div class="player-head"><div><div class="player-name">'+esc(p.name)+'</div><div class="team">'+esc(p.team_name||'소속팀 미정')+(p.position?' · '+esc(p.position):'')+'</div></div><span class="badge">PITCHER</span></div><div class="stats">'
++[['G','g'],['GS','gs'],['W','w'],['L','l'],['SV','sv'],['IP','ip'],['H','h'],['ER','er'],['BB','bb'],['SO','so'],['ERA','era'],['WHIP','whip']].map(x=>'<div class="stat"><b>'+x[0]+'</b><span>'+(['era','whip'].includes(x[1])?fmt(p[x[1]]):n(p[x[1]]))+'</span></div>').join('')+'</div></article>'
+}
+async function search(){
+const term=q.value.trim();
+if(!term){status.textContent='선수 이름을 입력하세요.';results.innerHTML='';return}
+status.textContent='검색 중...';results.innerHTML='';
+const [{data:bat,error:be},{data:pit,error:pe}]=await Promise.all([
+db.from('player_batting_search').select('*').ilike('name','%'+term+'%').limit(50),
+db.from('player_pitching_search').select('*').ilike('name','%'+term+'%').limit(50)
+]);
+if(be||pe){console.error(be||pe);status.textContent='데이터를 불러오지 못했습니다.';return}
+const seen=new Set(), cards=[];
+for(const p of bat||[]){if(!seen.has(p.id)){seen.add(p.id);cards.push(battingCard(p))}}
+for(const p of pit||[]){if(!seen.has(p.id)){seen.add(p.id);cards.push(pitchingCard(p))}}
+status.textContent=cards.length+'명의 선수를 찾았습니다.';
+results.innerHTML=cards.length?cards.join(''):'<div class="card empty">검색 결과가 없습니다.</div>';
+}
+btn.addEventListener('click',search);q.addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+</script>
+</body>
+</html>
